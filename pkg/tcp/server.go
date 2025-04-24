@@ -87,7 +87,7 @@ func handleConnection(conn net.Conn) error {
 		totalBytes += int64(n)
 	}
 
-	fmt.Printf("\n✅ Transfer complete: %s received.\n", formatBytes(totalBytes))
+	fmt.Printf("\n✅ Transfer complete: %s received to %s.\n", formatBytes(totalBytes), outFile.Name())
 
 	return nil
 }
