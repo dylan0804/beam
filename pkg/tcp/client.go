@@ -99,8 +99,6 @@ func DialAndSend(path string) error {
 		}
 	}()
 
-	if len(hosts) == 0 { return nil }
-
 	var selectedHost Host
 	
 	for {
