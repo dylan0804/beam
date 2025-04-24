@@ -82,7 +82,3 @@ Send a file:
 beam send ~/Downloads/picture.jpg
 ```
 
-## License
-
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
-
