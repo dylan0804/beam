@@ -99,7 +99,7 @@ func DialAndSend(path string) error {
 		}
 	}()
 
-	// if len(hosts) == 0 { return nil }
+	if len(hosts) == 0 { return nil }
 
 	var selectedHost Host
 	
@@ -150,7 +150,7 @@ func discoverServer(receiverChan chan<- Host, errChan chan<- error) {
 	}
 	defer sock.Close()
 
-	buf := make([]byte, 256)
+	buf := make([]byte, 4096)
 
 	for {
 		n, srcAddr, err := sock.ReadFromUDP(buf)
