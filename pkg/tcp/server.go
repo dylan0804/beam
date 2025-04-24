@@ -14,6 +14,31 @@ import (
 	"time"
 )
 
+var (
+	netListen = net.Listen
+	startBroadcastFn = startBroadcast
+	handleConnectionFn = handleConnection
+	osHostnameFn = os.Hostname
+
+	logPrintln = log.Println
+)
+
+func formatBytes(b int64) string {
+	const unit = 1000
+
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
 func handleConnection(conn net.Conn) error {
 	defer conn.Close()
 
@@ -46,7 +71,7 @@ func handleConnection(conn net.Conn) error {
 	defer outFile.Close()
 
 	buf := make([]byte, 4096)
-	totalBytes := 0
+	var totalBytes int64
 	for {
 		n, err := conn.Read(buf)
 
@@ -59,23 +84,24 @@ func handleConnection(conn net.Conn) error {
 			break
 		}
 
-		totalBytes += n
+		totalBytes += int64(n)
 	}
-	log.Printf("received %d bytes\n", totalBytes)
+
+	fmt.Printf("\n✅ Transfer complete: %s received.\n", formatBytes(totalBytes))
 
 	return nil
 }
 
 func startBroadcast(port int, hostname string) {
-	fmt.Println("broadcast called", port)
+	fmt.Printf("Broadcasting %s on port %d", hostname, port)
 	bcAddr, err := net.ResolveUDPAddr("udp4", "255.255.255.255:9999")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("error resolving UDP address:", err)
 	}
 
 	conn, err := net.DialUDP("udp4", nil, bcAddr)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("error dialing UDP:", err)
 	}
 	defer conn.Close()
 
@@ -83,14 +109,14 @@ func startBroadcast(port int, hostname string) {
 
 	for {
 		if _, err := conn.Write(msg); err != nil {
-			log.Println("broadcast port error", err)
+			log.Println("error when broadcasting port: ", err)
 		}
 		time.Sleep(1 * time.Second)
 	}
 }
 
 func Listen(ctx context.Context, port int) error {
-	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	listen, err := netListen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return err
 	}
@@ -103,19 +129,19 @@ func Listen(ctx context.Context, port int) error {
 	port = listen.Addr().(*net.TCPAddr).Port
 
 	var hostname string
-	hostname, err = os.Hostname() 
+	hostname, err = osHostnameFn() 
 	if err != nil {
 		hostname = "unknown host"
 	}
 
-	go startBroadcast(port, hostname)
+	go startBroadcastFn(port, hostname)
 
 	errChan := make(chan error)
 	var wg sync.WaitGroup
 
 	go func(){
 		for e := range errChan {
-			log.Println("error from handler:", e)
+			logPrintln("error from handler:", e)
 		}
 	}()
 
@@ -131,7 +157,7 @@ func Listen(ctx context.Context, port int) error {
 		wg.Add(1)
 		go func(c net.Conn) {
 			defer wg.Done()
-			if err := handleConnection(c); err != nil {
+			if err := handleConnectionFn(c); err != nil {
 				errChan <- err
 			}
 		}(conn)

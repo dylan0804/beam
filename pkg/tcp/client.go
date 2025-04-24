@@ -13,6 +13,19 @@ import (
 	"strings"
 )
 
+var (
+	discoverServerFn = discoverServer
+	sendFileFn = sendFile
+	netDialFn = net.Dial
+	scanLn = fmt.Scanln
+	hostDetail string
+	idDest int
+
+	discoverErrorHandler = func(err error) {
+		fmt.Printf("error when discovering server: %v", err)
+	}
+)
+
 type Host struct {
 	ID int
 	Name string
@@ -25,7 +38,7 @@ func sendFile(conn net.Conn, path string) error {
 	
 	file, err := os.Open(path)
 	if err != nil {
-		log.Println("error opening file", err)
+		log.Println("error opening file: ", err)
 		return err
 	}
 	defer file.Close()
@@ -45,11 +58,10 @@ func sendFile(conn net.Conn, path string) error {
 	}
 
 	bytes := new(bytes.Buffer)
-
 	io.Copy(bytes, file)
 
 	if _, err := conn.Write(bytes.Bytes()); err != nil {
-		log.Println("error transmitting files", err)
+		log.Println("error transmitting files: ", err)
 		return err
 	}
 	
@@ -57,40 +69,42 @@ func sendFile(conn net.Conn, path string) error {
 }
 
 func DialAndSend(path string) error {
-	receiver := make(chan Host)
-	receiverErr := make(chan error)
+	receiverChan := make(chan Host)
+	errChan := make(chan error, 1)
 
-	go discoverServer(receiver, receiverErr)
+	go discoverServerFn(receiverChan, errChan)
 
-	go func(){
-		for err := range receiverErr {
-			fmt.Printf("error when discovering server: %v\n", err)
+	go func() {
+		for err := range errChan {
+			discoverErrorHandler(err)
 		}
 	}()
 
 	id := 1
 	seen := map[string]bool{}
 	var hosts []Host
-	const prompt = "Which device to send to? "
+
 	go func(){
-		for r := range receiver {
+		for r := range receiverChan {
 			r.ID = id
 			key := r.IP.String() + ":" + strconv.Itoa(r.Port)
 			if seen[key] {
 				continue
 			}
 			seen[key] = true
-			fmt.Printf("\n%d. %s -- %s:%d\n%s", r.ID, r.Name, r.IP, r.Port, prompt)			
+			hostDetail = fmt.Sprintf("%d. %s -- %s:%d\n", r.ID, r.Name, r.IP, r.Port)
+			fmt.Println(hostDetail)	
 			hosts = append(hosts, r)
 			id++
 		}
 	}()
 
-	var idDest int
+	// if len(hosts) == 0 { return nil }
+
 	var selectedHost Host
 	
 	for {
-		_, err := fmt.Scanln(&idDest)
+		_, err := scanLn(&idDest)
 		if err != nil {
 			return err
 		}	
@@ -112,12 +126,12 @@ func DialAndSend(path string) error {
 	}
 
 	addr := fmt.Sprintf("%s:%d", selectedHost.IP, selectedHost.Port)
-	conn, err := net.Dial("tcp", addr)
+	conn, err := netDialFn("tcp", addr)
 	if err != nil {
 		return err
 	}
 
-	err = sendFile(conn, path)
+	err = sendFileFn(conn, path)
 	if err != nil {
 		return err
 	}
@@ -125,14 +139,14 @@ func DialAndSend(path string) error {
 	return nil
 }
 
-func discoverServer(receiver chan<- Host, receiverError chan<- error) {
+func discoverServer(receiverChan chan<- Host, errChan chan<- error) {
 	listenAddr := &net.UDPAddr{
 		IP: net.IPv4zero,
 		Port: 9999,
 	}
 	sock, err := net.ListenUDP("udp4", listenAddr)
 	if err != nil {
-		receiverError <- err
+		errChan <- err
 	}
 	defer sock.Close()
 
@@ -141,7 +155,7 @@ func discoverServer(receiver chan<- Host, receiverError chan<- error) {
 	for {
 		n, srcAddr, err := sock.ReadFromUDP(buf)
 		if err != nil {
-			receiverError <- err
+			errChan <- err
 			continue
 		}
 
@@ -149,7 +163,7 @@ func discoverServer(receiver chan<- Host, receiverError chan<- error) {
 
 		port, err := strconv.Atoi(p)
 		if err != nil {
-			receiverError <- fmt.Errorf("error reading port %q: %v", port, err)
+			errChan <- fmt.Errorf("error reading port %q: %v", port, err)
 			continue
 		}
 
@@ -159,6 +173,6 @@ func discoverServer(receiver chan<- Host, receiverError chan<- error) {
 			Port: port,
 		}
 
-		receiver <- r
+		receiverChan <- r
 	}
 }

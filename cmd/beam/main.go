@@ -31,7 +31,7 @@ func main() {
 
 		go func(){
 			<-sigCh
-			log.Println("shutting down…")
+			fmt.Println("shutting down…")
 			cancel()
 		}()
 
