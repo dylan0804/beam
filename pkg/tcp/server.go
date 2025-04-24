@@ -70,18 +70,23 @@ func handleConnection(conn net.Conn) error {
 	}
 	defer outFile.Close()
 
-	buf := make([]byte, 4096)
+	buf := make([]byte, 32*1024)
 	var totalBytes int64
 	for {
 		n, err := conn.Read(buf)
 
-		if err == io.EOF || err != nil {
-			break
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
 		}
 
-		if _, err := outFile.Write(buf); err != nil {
-			log.Println("error writing byte to file", err)
-			break
+		if n > 0 {
+			if _, err := outFile.Write(buf[:n]); err != nil {
+				log.Println("error writing byte to file", err)
+				return err
+			}
 		}
 
 		totalBytes += int64(n)
