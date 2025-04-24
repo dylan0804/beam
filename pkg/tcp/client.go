@@ -92,8 +92,8 @@ func DialAndSend(path string) error {
 				continue
 			}
 			seen[key] = true
-			hostDetail = fmt.Sprintf("%d. %s -- %s:%d\n", r.ID, r.Name, r.IP, r.Port)
-			fmt.Println(hostDetail)	
+			fmt.Printf("%d. %s -- %s:%d\n", r.ID, r.Name, r.IP, r.Port)
+			fmt.Print("Which device to send to? (e.g. 1): ")
 			hosts = append(hosts, r)
 			id++
 		}
