@@ -78,6 +78,6 @@ beam receive
 Send a file:
 
 ```bash
-beam send ~/Downloads/picture.jpg
+beam send -path="~/Downloads/picture.jpg"
 ```
 
