@@ -11,10 +11,11 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/schollz/progressbar/v3"
 )
 
 const (
-	DefaultBufferSize        = 32 * 1024
 	DefaultBroadcastPort     = 9999
 	DefaultBroadcastInterval = time.Second
 )
@@ -73,28 +74,20 @@ func handleConnection(conn net.Conn) {
 	}
 	defer file.Close()
 
-	_, err = io.CopyN(file, reader, int64(contentLength))
+	bar := progressbar.NewOptions(int(contentLength),
+		progressbar.OptionSetDescription(fmt.Sprintf("Receiving '%s'", fileName)),
+		progressbar.OptionEnableColorCodes(true),
+		progressbar.OptionSetWidth(30),
+		progressbar.OptionSetPredictTime(true),
+		progressbar.OptionShowBytes(true),
+	)
+	progressWriter := progressbar.NewReader(reader, bar)
+	_, err = io.Copy(file, &progressWriter)
 	if err != nil {
 		os.Remove(downloadPath)
 		handleError(err, "failed to copy contents into file")
 		return
 	}
-
-	// progressReader := &ProgressReader{
-	// 	reader:    reader,
-	// 	total:     int64(contentLength),
-	// 	read:      0,
-	// 	startTime: time.Now(),
-	// 	buf:       make([]byte, DefaultBufferSize),
-	// 	file:      file,
-	// }
-
-	// err = progressReader.Read()
-	// if err != nil {
-	// 	os.Remove(downloadPath)
-	// 	handleError(err, "failed to copy contents into file")
-	// 	return
-	// }
 }
 
 func (s *Server) startBroadcast(port int, hostname string) {

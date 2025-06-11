@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/schollz/progressbar/v3"
 )
 
 type Host struct {
@@ -70,66 +72,21 @@ func (c *Client) sendPayload(conn net.Conn, path string) error {
 		return err
 	}
 
-	// manual streaming bcs for some reason io.Copy isnt working
-	// progressReader := &ProgressReader{
-	// 	total:     fileInfo.Size(),
-	// 	read:      0,
-	// 	startTime: time.Now(),
-	// 	writer:    writer,
-	// 	buf:       make([]byte, DefaultBufferSize),
-	// 	file:      file,
-	// }
-
-	// fmt.Printf("Sending '%s' (%d bytes)\n", fileName, progressReader.total)
-
-	// err = progressReader.Write()
-
-	buffer := make([]byte, DefaultBufferSize)
-	var totalRead int64
-	totalSize := fileInfo.Size()
-	start := time.Now()
-
-	fmt.Printf("Sending %s (%s)\n", fileName, formatBytes(totalSize))
-
-	for totalRead < totalSize {
-		n, err := file.Read(buffer)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("read error: %v", err)
-		}
-
-		if _, err := writer.Write(buffer[:n]); err != nil {
-			return fmt.Errorf("write error: %v", err)
-		}
-
-		totalRead += int64(n)
-		elapsed := time.Since(start)
-		speed := float64(totalRead) / elapsed.Seconds()
-
-		// throttle
-		if totalRead%1000 == 0 || totalRead == totalSize {
-			percentage := float64(totalRead) / float64(totalSize) * 100
-
-			barWidth := 50
-			filled := int(percentage / 100 * float64(barWidth))
-			bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
-
-			fmt.Printf("\r[%s] %.1f%% (%s/%s) - (%s/s)",
-				bar,
-				percentage,
-				formatBytes(totalRead),
-				formatBytes(totalSize),
-				formatBytes(int64(speed)))
-		}
-	}
-
+	// setup progress bar
+	bar := progressbar.NewOptions(int(fileInfo.Size()),
+		progressbar.OptionSetDescription(fmt.Sprintf("Transfering '%s'", fileName)),
+		progressbar.OptionEnableColorCodes(true),
+		progressbar.OptionSetWidth(30),
+		progressbar.OptionSetPredictTime(true),
+		progressbar.OptionShowBytes(true),
+	)
+	progressReader := progressbar.NewReader(file, bar)
+	_, err = io.Copy(writer, &progressReader)
 	if err != nil {
 		return fmt.Errorf("error writing file contents to writer: %v", err)
 	}
 
-	fmt.Println("Transfer complete")
+	fmt.Println("\nTransfer complete")
 
 	return writer.Flush()
 }
