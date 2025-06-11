@@ -87,6 +87,7 @@ func (c *Client) sendPayload(conn net.Conn, path string) error {
 	buffer := make([]byte, DefaultBufferSize)
 	var totalRead int64
 	totalSize := fileInfo.Size()
+	start := time.Now()
 
 	fmt.Printf("Sending %s (%s)\n", fileName, formatBytes(totalSize))
 
@@ -104,6 +105,8 @@ func (c *Client) sendPayload(conn net.Conn, path string) error {
 		}
 
 		totalRead += int64(n)
+		elapsed := time.Since(start)
+		speed := float64(totalRead) / elapsed.Seconds()
 
 		// throttle
 		if totalRead%1000 == 0 || totalRead == totalSize {
@@ -113,11 +116,12 @@ func (c *Client) sendPayload(conn net.Conn, path string) error {
 			filled := int(percentage / 100 * float64(barWidth))
 			bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
 
-			fmt.Printf("\r[%s] %.1f%% (%s/%s)",
+			fmt.Printf("\r[%s] %.1f%% (%s/%s) - (%s/s)",
 				bar,
 				percentage,
 				formatBytes(totalRead),
-				formatBytes(totalSize))
+				formatBytes(totalSize),
+				formatBytes(int64(speed)))
 		}
 	}
 
