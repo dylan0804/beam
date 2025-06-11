@@ -66,7 +66,6 @@ Steps:
 
 - **Broadcast port**: UDP `9999` (hardcoded)
 - **Buffer size**: 32 KiB (adjustable in code)
-- **Discovery timeout**: driver waits for one discovery event before proceeding (customizable)
 
 ## Examples
 
@@ -79,6 +78,6 @@ beam receive
 Send a file:
 
 ```bash
-beam send ~/Downloads/picture.jpg
+beam send -path="~/Downloads/picture.jpg"
 ```
 
