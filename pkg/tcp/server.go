@@ -75,21 +75,28 @@ func handleConnection(conn net.Conn) {
 	}
 	defer file.Close()
 
-	progressReader := &ProgressReader{
-		reader:    reader,
-		total:     int64(contentLength),
-		read:      0,
-		startTime: time.Now(),
-		buf:       make([]byte, DefaultBufferSize),
-		file:      file,
-	}
-
-	err = progressReader.Read()
+	_, err = io.CopyN(file, reader, int64(contentLength))
 	if err != nil {
 		os.Remove(downloadPath)
 		handleError(err, "failed to copy contents into file")
 		return
 	}
+
+	// progressReader := &ProgressReader{
+	// 	reader:    reader,
+	// 	total:     int64(contentLength),
+	// 	read:      0,
+	// 	startTime: time.Now(),
+	// 	buf:       make([]byte, DefaultBufferSize),
+	// 	file:      file,
+	// }
+
+	// err = progressReader.Read()
+	// if err != nil {
+	// 	os.Remove(downloadPath)
+	// 	handleError(err, "failed to copy contents into file")
+	// 	return
+	// }
 }
 
 func (s *Server) startBroadcast(port int, hostname string) {
