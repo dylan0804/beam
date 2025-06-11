@@ -1,7 +1,7 @@
 package tcp
 
 import (
-	"context"
+	"bufio"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -10,96 +10,91 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 )
 
-var (
-	netListen = net.Listen
-	startBroadcastFn = startBroadcast
-	handleConnectionFn = handleConnection
-	osHostnameFn = os.Hostname
-
-	logPrintln = log.Println
+const (
+	DefaultBufferSize        = 32 * 1024
+	DefaultBroadcastPort     = 9999
+	DefaultBroadcastInterval = time.Second
 )
 
-func formatBytes(b int64) string {
-	const unit = 1000
-
-	if b < unit {
-		return fmt.Sprintf("%d B", b)
-	}
-
-	div, exp := int64(unit), 0
-	for n := b / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-
-	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+type Server struct {
+	listener Listener
 }
 
-func handleConnection(conn net.Conn) error {
+func NewServer(listener Listener) *Server {
+	return &Server{
+		listener: listener,
+	}
+}
+
+func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	var lenBuf [4]byte
+	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 
-	if _, err := io.ReadFull(conn, lenBuf[:]); err != nil {
-		return err
+	handleError := func(err error, msg string) {
+		log.Printf("Error for client %s: %s - %v", conn.RemoteAddr(), msg, err)
 	}
 
-	filenameLength := binary.BigEndian.Uint32(lenBuf[:])
+	reader := bufio.NewReader(conn)
 
-	nameBytes := make([]byte, filenameLength)
-	if _, err := io.ReadFull(conn, nameBytes); err != nil {
-		return err
+	var fileNameLength uint32
+	err := binary.Read(reader, binary.BigEndian, &fileNameLength)
+	if err != nil {
+		handleError(err, "failed to read filename length")
+		return
 	}
 
-	filename := string(nameBytes)
+	fileName := make([]byte, fileNameLength)
+	_, err = io.ReadFull(reader, fileName)
+	if err != nil {
+		handleError(err, "failed to read filename")
+		return
+	}
+
+	var contentLength uint64
+	err = binary.Read(reader, binary.BigEndian, &contentLength)
+	if err != nil {
+		handleError(err, "failed to read content length")
+		return
+	}
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		log.Fatalln(err)
+		handleError(err, "failed to get home dir")
+		return
 	}
+	downloadPath := filepath.Join(homeDir, "Downloads", string(fileName))
 
-	outPath := filepath.Join(homeDir, "Downloads", filename)
-	
-	outFile, err := os.Create(outPath)
+	file, err := os.Create(downloadPath)
 	if err != nil {
-		return err
+		handleError(err, "failed to create download path")
+		return
 	}
-	defer outFile.Close()
+	defer file.Close()
 
-	buf := make([]byte, 32*1024)
-	var totalBytes int64
-	for {
-		n, err := conn.Read(buf)
-
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return err
-		}
-
-		if n > 0 {
-			if _, err := outFile.Write(buf[:n]); err != nil {
-				log.Println("error writing byte to file", err)
-				return err
-			}
-		}
-
-		totalBytes += int64(n)
+	progressReader := &ProgressReader{
+		reader:    reader,
+		total:     int64(contentLength),
+		read:      0,
+		startTime: time.Now(),
+		buf:       make([]byte, DefaultBufferSize),
+		file:      file,
 	}
 
-	fmt.Printf("\n✅ Transfer complete: %s received to %s.\n", formatBytes(totalBytes), outFile.Name())
-
-	return nil
+	err = progressReader.Read()
+	if err != nil {
+		os.Remove(downloadPath)
+		handleError(err, "failed to copy contents into file")
+		return
+	}
 }
 
-func startBroadcast(port int, hostname string) {
-	fmt.Printf("Broadcasting %s on port %d", hostname, port)
-	bcAddr, err := net.ResolveUDPAddr("udp4", "255.255.255.255:9999")
+func (s *Server) startBroadcast(port int, hostname string) {
+	fmt.Printf("Broadcasting %s on port %d\n", hostname, port)
+	bcAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("255.255.255.255:%d", DefaultBroadcastPort))
 	if err != nil {
 		log.Fatal("error resolving UDP address:", err)
 	}
@@ -113,63 +108,37 @@ func startBroadcast(port int, hostname string) {
 	msg := []byte(fmt.Sprintf("%s|%d", hostname, port))
 
 	for {
-		if _, err := conn.Write(msg); err != nil {
-			log.Println("error when broadcasting port: ", err)
+		_, err := conn.Write(msg)
+		if err != nil {
+			fmt.Printf("err sending msg: %v\n", err)
 		}
-		time.Sleep(1 * time.Second)
+		time.Sleep(DefaultBroadcastInterval)
 	}
 }
 
-func Listen(ctx context.Context, port int) error {
-	listen, err := netListen("tcp", fmt.Sprintf(":%d", port))
+func (s *Server) Start(addr string) error {
+	listener, err := s.listener.Listen(fmt.Sprintf(":%s", addr))
 	if err != nil {
-		return err
+		return fmt.Errorf("error starting listener: %v", err)
 	}
-	
-	go func(){
-		<-ctx.Done()
-		listen.Close()
-	}()
+	defer listener.Close()
 
-	port = listen.Addr().(*net.TCPAddr).Port
+	hostname, port := getListenAddr(listener)
 
-	var hostname string
-	hostname, err = osHostnameFn() 
-	if err != nil {
-		hostname = "unknown host"
-	}
-
-	go startBroadcastFn(port, hostname)
-
-	errChan := make(chan error)
-	var wg sync.WaitGroup
-
-	go func(){
-		for e := range errChan {
-			logPrintln("error from handler:", e)
-		}
-	}()
+	// broadcast IP to clients
+	go s.startBroadcast(port, hostname)
 
 	for {
-		conn, err := listen.Accept()
+		conn, err := listener.Accept()
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
 				break
 			}
 			return err
 		}
-		
-		wg.Add(1)
-		go func(c net.Conn) {
-			defer wg.Done()
-			if err := handleConnectionFn(c); err != nil {
-				errChan <- err
-			}
-		}(conn)
-	}
 
-	wg.Wait()
-	close(errChan)
+		go handleConnection(conn)
+	}
 
 	return nil
 }

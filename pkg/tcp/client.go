@@ -1,176 +1,218 @@
 package tcp
 
 import (
-	"bytes"
+	"bufio"
+	"context"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
-)
-
-var (
-	discoverServerFn = discoverServer
-	sendFileFn = sendFile
-	netDialFn = net.Dial
-	scanLn = fmt.Scanln
-	hostDetail string
-	idDest int
-
-	discoverErrorHandler = func(err error) {
-		fmt.Printf("error when discovering server: %v", err)
-	}
+	"sync"
+	"time"
 )
 
 type Host struct {
-	ID int
 	Name string
-	IP net.IP
+	IP   net.IP
 	Port int
 }
 
-func sendFile(conn net.Conn, path string) error {
+type Client struct {
+	hostId       int
+	receiverChan chan Host
+	errChan      chan error
+	mutex        sync.Mutex
+	hosts        map[int]Host
+	seen         map[string]bool
+}
+
+func NewClient() *Client {
+	return &Client{
+		hostId:       1,
+		receiverChan: make(chan Host, 5),
+		errChan:      make(chan error, 5),
+		hosts:        make(map[int]Host, 5),
+		seen:         make(map[string]bool, 5),
+	}
+}
+
+func (c *Client) sendPayload(conn net.Conn, path string) error {
 	defer conn.Close()
-	
+
 	file, err := os.Open(path)
 	if err != nil {
-		log.Println("error opening file: ", err)
 		return err
 	}
 	defer file.Close()
 
-	filename := filepath.Base(path)
-	filenameBytes := []byte(filename)
-
-	var lenBuf [4]byte
-
-	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(filenameBytes)))
-
-	if _, err := conn.Write(lenBuf[:]); err != nil {
-		return err
-	}
-	if _, err := conn.Write(filenameBytes); err != nil {
+	fileInfo, err := file.Stat()
+	if err != nil {
 		return err
 	}
 
-	bytes := new(bytes.Buffer)
-	io.Copy(bytes, file)
+	writer := bufio.NewWriter(conn)
 
-	if _, err := conn.Write(bytes.Bytes()); err != nil {
-		log.Println("error transmitting files: ", err)
+	fileName := fileInfo.Name()
+	if err := binary.Write(writer, binary.BigEndian, uint32(len(fileName))); err != nil {
 		return err
 	}
-	
-	return err
+	if _, err := writer.Write([]byte(fileName)); err != nil {
+		return err
+	}
+	if err := binary.Write(writer, binary.BigEndian, uint64(fileInfo.Size())); err != nil {
+		return err
+	}
+	if err := writer.Flush(); err != nil {
+		return err
+	}
+
+	// manual streaming bcs for some reason io.Copy isnt working
+	progressReader := &ProgressReader{
+		total:     fileInfo.Size(),
+		read:      0,
+		startTime: time.Now(),
+		writer:    writer,
+		buf:       make([]byte, DefaultBufferSize),
+		file:      file,
+	}
+
+	fmt.Printf("Sending '%s' (%d bytes)\n", fileName, progressReader.total)
+
+	err = progressReader.Write()
+	if err != nil {
+		return fmt.Errorf("error writing file contents to writer: %v", err)
+	}
+
+	fmt.Printf("\nTransfer complete in %v!\n", time.Since(progressReader.startTime).Round(time.Second))
+
+	return writer.Flush()
 }
 
-func DialAndSend(path string) error {
-	receiverChan := make(chan Host)
-	errChan := make(chan error, 1)
+func (c *Client) addHost(host Host) bool {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
 
-	go discoverServerFn(receiverChan, errChan)
+	key := fmt.Sprintf("%s:%d", host.IP, host.Port)
+	if !c.seen[key] {
+		c.seen[key] = true
+		c.hosts[c.hostId] = host
+		c.hostId++
+		return true
+	}
+
+	return false
+}
+
+func (c *Client) redrawUI() {
+	fmt.Print("\033[H\033[2J")
+
+	for id, host := range c.hosts {
+		fmt.Printf("%d. %s -- %s:%d\n", id, host.Name, host.IP, host.Port)
+	}
+
+	fmt.Printf("Choose a device to send to > ")
+}
+
+func (c *Client) DialAndSend(path string) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go c.discoverServer(ctx)
 
 	go func() {
-		for err := range errChan {
-			discoverErrorHandler(err)
-		}
-	}()
-
-	id := 1
-	seen := map[string]bool{}
-	var hosts []Host
-
-	go func(){
-		for r := range receiverChan {
-			r.ID = id
-			key := r.IP.String() + ":" + strconv.Itoa(r.Port)
-			if seen[key] {
-				continue
+		for {
+			select {
+			case host := <-c.receiverChan:
+				if c.addHost(host) {
+					c.redrawUI()
+				}
+			case err := <-c.errChan:
+				log.Printf("error occured: %v", err)
+			case <-ctx.Done():
+				return
 			}
-			seen[key] = true
-			fmt.Printf("%d. %s -- %s:%d\n", r.ID, r.Name, r.IP, r.Port)
-			fmt.Print("Which device to send to? (e.g. 1): ")
-			hosts = append(hosts, r)
-			id++
 		}
 	}()
 
-	var selectedHost Host
-	
+	var selectedId int
 	for {
-		_, err := scanLn(&idDest)
+		_, err := fmt.Scanln(&selectedId)
 		if err != nil {
-			return err
-		}	
-
-		var found bool
-		for _, h := range hosts {
-			if h.ID == idDest {
-				selectedHost = h
-				found = true
-				break
-			}
+			return fmt.Errorf("error reading user input: %v", err)
 		}
 
-		if !found {
-			fmt.Printf("No server with ID %d. Try again.\n", idDest)
+		if _, exists := c.hosts[selectedId]; !exists {
+			fmt.Printf("Device with ID %d doesn't exist\n", selectedId)
 			continue
 		}
 		break
 	}
 
-	addr := fmt.Sprintf("%s:%d", selectedHost.IP, selectedHost.Port)
-	conn, err := netDialFn("tcp", addr)
+	selectedHost := c.hosts[selectedId]
+
+	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", selectedHost.IP, selectedHost.Port))
 	if err != nil {
-		return err
+		return fmt.Errorf("error dialing receiver's end: %v", err)
 	}
 
-	err = sendFileFn(conn, path)
+	err = c.sendPayload(conn, path)
 	if err != nil {
-		return err
+		return fmt.Errorf("error sending payload: %v", err)
 	}
 
 	return nil
 }
 
-func discoverServer(receiverChan chan<- Host, errChan chan<- error) {
+func (c *Client) discoverServer(ctx context.Context) {
 	listenAddr := &net.UDPAddr{
-		IP: net.IPv4zero,
+		IP:   net.IPv4zero,
 		Port: 9999,
 	}
 	sock, err := net.ListenUDP("udp4", listenAddr)
 	if err != nil {
-		errChan <- err
+		c.errChan <- err
+		return
 	}
 	defer sock.Close()
 
-	buf := make([]byte, 4096)
+	buf := make([]byte, 1024)
 
 	for {
-		n, srcAddr, err := sock.ReadFromUDP(buf)
-		if err != nil {
-			errChan <- err
-			continue
+		select {
+		case <-ctx.Done():
+			return
+
+		default:
+			// deadline here to prevent this goroutine from running perpetually if no server is running
+			sock.SetReadDeadline(time.Now().Add(3 * time.Second))
+
+			n, srcAddr, err := sock.ReadFromUDP(buf)
+			if err != nil {
+				if netError, ok := err.(net.Error); ok && netError.Timeout() {
+					continue
+				}
+				c.errChan <- err
+				continue
+			}
+
+			hostname, p, _ := strings.Cut(string(buf[:n]), "|")
+
+			port, err := strconv.Atoi(p)
+			if err != nil {
+				c.errChan <- fmt.Errorf("error reading port %q: %v", port, err)
+				continue
+			}
+
+			r := Host{
+				Name: hostname,
+				IP:   srcAddr.IP,
+				Port: port,
+			}
+
+			c.receiverChan <- r
 		}
-
-		hostname, p, _ := strings.Cut(string(buf[:n]), "|")
-
-		port, err := strconv.Atoi(p)
-		if err != nil {
-			errChan <- fmt.Errorf("error reading port %q: %v", port, err)
-			continue
-		}
-
-		r := Host{
-			Name: hostname,
-			IP: srcAddr.IP,
-			Port: port,
-		}
-
-		receiverChan <- r
 	}
 }
