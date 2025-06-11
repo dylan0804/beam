@@ -32,8 +32,6 @@ func NewServer(listener Listener) *Server {
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
-
 	handleError := func(err error, msg string) {
 		log.Printf("Error for client %s: %s - %v", conn.RemoteAddr(), msg, err)
 	}
