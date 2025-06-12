@@ -76,14 +76,16 @@ func (c *Client) sendPayload(conn net.Conn, path string) error {
 	bar := progressbar.NewOptions(int(fileInfo.Size()),
 		progressbar.OptionSetDescription(fmt.Sprintf("Transfering '%s'", fileName)),
 		progressbar.OptionEnableColorCodes(true),
-		progressbar.OptionSetWidth(30),
+		progressbar.OptionSetWidth(25),
 		progressbar.OptionSetPredictTime(true),
 		progressbar.OptionShowBytes(true),
 	)
 	progressReader := progressbar.NewReader(file, bar)
-	_, err = io.Copy(writer, &progressReader)
+	buf := make([]byte, DefaultBufferSize)
+	_, err = io.CopyBuffer(writer, &progressReader, buf)
+
 	if err != nil {
-		return fmt.Errorf("error writing file contents to writer: %v", err)
+		return fmt.Errorf("error writing file contents to writer: %w", err)
 	}
 
 	fmt.Println("\nTransfer complete")
@@ -107,10 +109,8 @@ func (c *Client) addHost(host Host) bool {
 }
 
 func (c *Client) redrawUI() {
-	fmt.Print("\033[H\033[2J")
-
 	for id, host := range c.hosts {
-		fmt.Printf("%d. %s -- %s:%d\n", id, host.Name, host.IP, host.Port)
+		fmt.Printf("\r%d. %s -- %s:%d\n", id, host.Name, host.IP, host.Port)
 	}
 
 	fmt.Printf("Choose a device to send to > ")
@@ -130,7 +130,7 @@ func (c *Client) DialAndSend(path string) error {
 					c.redrawUI()
 				}
 			case err := <-c.errChan:
-				log.Printf("error occured: %v", err)
+				log.Printf("error occured: %w", err)
 			case <-ctx.Done():
 				return
 			}
@@ -141,7 +141,7 @@ func (c *Client) DialAndSend(path string) error {
 	for {
 		_, err := fmt.Scanln(&selectedId)
 		if err != nil {
-			return fmt.Errorf("error reading user input: %v", err)
+			return fmt.Errorf("error reading user input: %w", err)
 		}
 
 		if _, exists := c.hosts[selectedId]; !exists {
@@ -155,12 +155,12 @@ func (c *Client) DialAndSend(path string) error {
 
 	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", selectedHost.IP, selectedHost.Port))
 	if err != nil {
-		return fmt.Errorf("error dialing receiver's end: %v", err)
+		return fmt.Errorf("error dialing receiver's end: %w", err)
 	}
 
 	err = c.sendPayload(conn, path)
 	if err != nil {
-		return fmt.Errorf("error sending payload: %v", err)
+		return fmt.Errorf("error sending payload: %w", err)
 	}
 
 	return nil
@@ -202,7 +202,7 @@ func (c *Client) discoverServer(ctx context.Context) {
 
 			port, err := strconv.Atoi(p)
 			if err != nil {
-				c.errChan <- fmt.Errorf("error reading port %q: %v", port, err)
+				c.errChan <- fmt.Errorf("error reading port %q: %w", port, err)
 				continue
 			}
 

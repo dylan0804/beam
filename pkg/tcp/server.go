@@ -16,6 +16,7 @@ import (
 )
 
 const (
+	DefaultBufferSize        = 64 * 1024 // 64KB
 	DefaultBroadcastPort     = 9999
 	DefaultBroadcastInterval = time.Second
 )
@@ -34,7 +35,7 @@ func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	handleError := func(err error, msg string) {
-		log.Printf("Error for client %s: %s - %v", conn.RemoteAddr(), msg, err)
+		log.Printf("Error for client %s: %s - %w", conn.RemoteAddr(), msg, err)
 	}
 
 	reader := bufio.NewReader(conn)
@@ -77,12 +78,13 @@ func handleConnection(conn net.Conn) {
 	bar := progressbar.NewOptions(int(contentLength),
 		progressbar.OptionSetDescription(fmt.Sprintf("Receiving '%s'", fileName)),
 		progressbar.OptionEnableColorCodes(true),
-		progressbar.OptionSetWidth(30),
+		progressbar.OptionSetWidth(25),
 		progressbar.OptionSetPredictTime(true),
 		progressbar.OptionShowBytes(true),
 	)
 	progressWriter := progressbar.NewReader(reader, bar)
-	_, err = io.Copy(file, &progressWriter)
+	buf := make([]byte, DefaultBufferSize)
+	_, err = io.CopyBuffer(file, &progressWriter, buf)
 	if err != nil {
 		os.Remove(downloadPath)
 		handleError(err, "failed to copy contents into file")
@@ -108,7 +110,7 @@ func (s *Server) startBroadcast(port int, hostname string) {
 	for {
 		_, err := conn.Write(msg)
 		if err != nil {
-			fmt.Printf("err sending msg: %v\n", err)
+			fmt.Printf("err sending msg: %w\n", err)
 		}
 		time.Sleep(DefaultBroadcastInterval)
 	}
@@ -117,7 +119,7 @@ func (s *Server) startBroadcast(port int, hostname string) {
 func (s *Server) Start(addr string) error {
 	listener, err := s.listener.Listen(fmt.Sprintf(":%s", addr))
 	if err != nil {
-		return fmt.Errorf("error starting listener: %v", err)
+		return fmt.Errorf("error starting listener: %w", err)
 	}
 	defer listener.Close()
 
