@@ -6,8 +6,9 @@ Beam is a simple peer-to-peer file transfer CLI tool written in Go. It uses UDP 
 
 - Zero-configuration LAN discovery via UDP broadcast
 - Reliable file transfer over TCP
-- Cross-platform (Windows, macOS, Linux)
-- Efficient streaming with configurable buffer sizes
+- Rich user experience with real-time progress bar
+- Support for both single file and entire folder transfers
+- Smart handling of .gitignore patterns during folder transfers
 
 ## Installation
 
@@ -25,7 +26,7 @@ Or install directly via `go install`:
 go install github.com/dylan0804/beam/cmd/beam@latest
 ```
 
-Make sure your `$GOPATH/bin` (or Go’s module bin directory) is in your `PATH`.
+Make sure your `$GOPATH/bin` (or Go's module bin directory) is in your `PATH`.
 
 ## Usage
 
@@ -46,7 +47,7 @@ The receiver will broadcast its presence on UDP port `9999` every second, advert
 Send a file to a discovered receiver:
 
 ```bash
-beam send -path="path/to/file"
+beam send -path="path/to/file/or/folder"
 ```
 
 Steps:
@@ -57,15 +58,10 @@ Steps:
    2. other-host    -- 192.168.1.43:54322
    ```
 2. **Select**: Enter the ID of the target host (e.g., `1`).
-3. **Transfer**: Streams the file over TCP. When complete, you’ll see:
+3. **Transfer**: Streams the file over TCP. When complete, you'll see:
    ```
-   ✅ Transfer complete: 12.3 KB received to path/to/download.
+   ✅ Transfer complete: 1 file(s).
    ```
-
-## Configuration
-
-- **Broadcast port**: UDP `9999` (hardcoded)
-- **Buffer size**: 32 KiB (adjustable in code)
 
 ## Examples
 
