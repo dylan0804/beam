@@ -67,6 +67,8 @@ Steps:
 
 Start a receiver on a fixed port:
 
+![Screen Recording Jun 14 2025](https://github.com/user-attachments/assets/91730c77-f2a7-4f40-a71a-525eb242a739)
+
 ```bash
 beam receive
 ```
