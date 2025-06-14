@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/k0kubun/go-ansi"
 	gitignore "github.com/sabhiram/go-gitignore"
@@ -111,7 +110,7 @@ func (c *Client) sendFile(t pathType, writer *bufio.Writer, path string, f *os.F
 	bar.ChangeMax64(fileSize)
 	bar.Describe(fmt.Sprintf("[%d] Sending: %s", *files, path))
 
-	_, err = io.CopyN(writer, io.MultiReader(f, bar), fileSize)
+	_, err = io.CopyN(writer, io.TeeReader(f, bar), fileSize)
 	if err != nil {
 		return fmt.Errorf("error writing file contents to writer: %w", err)
 	}
@@ -134,7 +133,6 @@ func (c *Client) sendPayload(conn net.Conn, p string, pathType pathType) error {
 		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
 		progressbar.OptionShowBytes(true),
 		progressbar.OptionFullWidth(),
-		progressbar.OptionThrottle(500*time.Millisecond),
 		progressbar.OptionShowCount(),
 		progressbar.OptionUseANSICodes(true),
 	)
