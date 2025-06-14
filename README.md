@@ -25,6 +25,8 @@ Or install directly via `go install`:
 go install github.com/dylan0804/beam/cmd/beam@latest
 ```
 
+![Screen Recording Jun 14 2025](https://github.com/user-attachments/assets/77ea208f-65f5-43c2-874a-58f94baa41ca)
+
 Make sure your `$GOPATH/bin` (or Go’s module bin directory) is in your `PATH`.
 
 ## Usage
