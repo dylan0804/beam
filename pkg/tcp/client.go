@@ -186,7 +186,7 @@ func (c *Client) sendPayload(conn net.Conn, p string, pathType pathType) error {
 			return err
 		}
 	}
-	fmt.Printf("\n✅ Transfer complete: %d files", files)
+	fmt.Printf("✅ Transfer complete: %d files", files)
 	return nil
 }
 
