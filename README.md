@@ -1,6 +1,6 @@
 # Beam
 
-Beam is a simple peer-to-peer file transfer CLI tool written in Go. It uses UDP broadcast for peer discovery and TCP for reliable file streaming over a local network.
+Beam is a simple peer-to-peer file/folder transfer CLI tool written in Go. It uses UDP broadcast for peer discovery and TCP for reliable file streaming over a local network.
 
 ## Features
 
