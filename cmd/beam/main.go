@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"os"
 
 	"github.com/dylan0804/beam/pkg/tcp"
@@ -52,14 +53,19 @@ func main() {
 
 	switch os.Args[1] {
 	case "receive":
-		// DI
+		// setup DI
 		listener := tcp.NewListener()
-		server := tcp.NewServer(listener)
+		broadcaster := tcp.NewBroadcaster()
+		connHandler := tcp.NewHandler()
+
+		server := tcp.NewServer(listener, broadcaster, connHandler)
 		if err := server.Start(cfg.port); err != nil {
 			log.Fatalf("receive failed: %v", err)
 		}
 	case "send":
-		client := tcp.NewClient()
+		discoverer := tcp.NewUDPDiscoverer(9999)
+		dialer := net.Dial
+		client := tcp.NewClient(dialer, discoverer, os.Stdin, os.Stdout)
 		if err := client.DialAndSend(cfg.path); err != nil {
 			log.Fatalf("dial and send failed: %v", err)
 		}

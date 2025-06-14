@@ -1,25 +1,11 @@
 package tcp
 
 import (
+	"log"
 	"net"
 	"os"
+	"path/filepath"
 )
-
-// func formatBytes(b int64) string {
-// 	const unit = 1024
-
-// 	if b < unit {
-// 		return fmt.Sprintf("%d B", b)
-// 	}
-
-// 	div, exp := int64(unit), 0
-// 	for n := b / unit; n >= unit; n /= unit {
-// 		div *= unit
-// 		exp++
-// 	}
-
-// 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
-// }
 
 func getListenAddr(listener net.Listener) (string, int) {
 	port := listener.Addr().(*net.TCPAddr).Port
@@ -30,4 +16,12 @@ func getListenAddr(listener net.Listener) (string, int) {
 	}
 
 	return hostname, port
+}
+
+func getDownloadPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("cannot get user home directory: %v", err)
+	}
+	return filepath.Join(home, "Downloads")
 }
