@@ -152,7 +152,7 @@ func (c *Client) sendPayload(conn net.Conn, p string, pathType pathType) error {
 		}
 
 	case folder:
-		base := filepath.Base(p)
+		parentDir := filepath.Dir(p)
 		err := filepath.WalkDir(p, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -165,12 +165,10 @@ func (c *Client) sendPayload(conn net.Conn, p string, pathType pathType) error {
 				return nil
 			}
 
-			relativePath, err := filepath.Rel(p, path)
+			relativePath, err := filepath.Rel(parentDir, path)
 			if err != nil {
 				return err
 			}
-
-			relativePath = filepath.Join(base, relativePath)
 
 			if d.IsDir() {
 				return c.sendDirectory(folder, writer, relativePath, &files)
