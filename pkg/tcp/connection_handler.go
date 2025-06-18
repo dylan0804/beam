@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/k0kubun/go-ansi"
@@ -72,7 +73,7 @@ func (h *Handler) HandleConnection(conn net.Conn) {
 			return
 		}
 
-		normalizedFileName := filepath.FromSlash(string(fileName))
+		normalizedFileName := strings.ReplaceAll(string(fileName), "\\", "/")
 		path := filepath.Join(DownloadPath, normalizedFileName)
 
 		filesProcessed++
