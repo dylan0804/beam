@@ -72,7 +72,8 @@ func (h *Handler) HandleConnection(conn net.Conn) {
 			return
 		}
 
-		path := filepath.Join(DownloadPath, string(fileName))
+		normalizedFileName := filepath.FromSlash(string(fileName))
+		path := filepath.Join(DownloadPath, normalizedFileName)
 
 		filesProcessed++
 
